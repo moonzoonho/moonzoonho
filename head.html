@@ -1,0 +1,30 @@
+<!-- head.html : 공통 상단 네비게이션 (상대경로) -->
+<style>
+  .topnav{position:sticky;top:0;z-index:999;background:linear-gradient(180deg, rgba(10,15,31,.95), rgba(10,15,31,.75));backdrop-filter:saturate(120%) blur(8px);border-bottom:1px solid #1c274a}
+  .topnav .inner{max-width:1200px;margin:0 auto;padding:8px 16px;display:flex;gap:8px;align-items:center}
+  .a-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;border:1px solid #2a3b7d;background:#162046;color:#cfe0ff;text-decoration:none;font-size:14px}
+  .a-btn.ghost{background:transparent}
+  .a-btn.active{background:#304ab1;color:#fff;border-color:#304ab1}
+  .a-spacer{flex:1}
+  .small{font-size:12px;color:#9fb1ff}
+</style>
+<nav class="topnav">
+  <div class="inner">
+    <a class="a-btn" href="index.html">바코드 뽑기</a>
+    <a class="a-btn" href="index3.html">출고 문서 만들기</a>
+    <a class="a-btn" href="db.html">엑셀 업로드</a> 
+    <a href="/data/batches/latest.xlsx" download>최신 파일 다운로드</a><!-- ✅ 새 버튼 -->
+    <div class="a-spacer"></div>
+    <span class="small">RocketCross</span>
+  </div>
+</nav>
+<script>
+  (function(){
+    var here = (location.pathname.split('/').pop() || '').toLowerCase();
+    document.querySelectorAll('.topnav a.a-btn').forEach(function(a){
+      var me = (a.getAttribute('href')||'').toLowerCase();
+      if((here===''||here==='index.htm'||here==='index.html') && me==='index.html') a.classList.add('active');
+      if(here===me) a.classList.add('active');
+    });
+  })();
+</script>

@@ -1,0 +1,368 @@
+
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>바코드 출력 PRO — </title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net"/>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0a0f1f; --panel:#121a2d; --panel2:#0d1428; --line:#1c274a;
+  --text:#eaf0ff; --muted:#9fb1ff; --accent:#7aa2ff; --ok:#3eea9a;
+  --warn:#ffcc66; --bad:#ff6b6b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Apple SD Gothic Neo,Noto Sans KR,Arial}
+.wrap{max-width:1200px;margin:26px auto;padding:0 16px}
+h1{margin:0 0 10px;font-size:22px;font-weight:800}
+.sub{color:var(--muted);font-size:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+.grid{display:grid;gap:12px}
+.row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.col{flex:1;min-width:220px}
+label{display:block;margin:0 0 6px;font-size:12px;color:var(--muted)}
+input[type="text"],input[type="number"],select{
+  width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  color:var(--text);padding:10px 12px;font-size:14px;outline:none}
+button{background:#304ab1;border:none;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+button.secondary{background:#243161}
+button.ghost{background:transparent;border:1px solid #2a3b7d}
+button.danger{background:var(--bad)}
+button.ok{background:#2e875a}
+.bad{color:var(--bad)} .ok{color:var(--ok)} .muted{color:var(--muted)}
+.kbd{background:#00000050;border:1px solid #2a3b7d;border-bottom-color:#1b2550;border-radius:6px;padding:2px 6px;font-family:ui-monospace,Consolas,Menlo,monospace}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.pill{display:inline-flex;align-items:center;gap:6px;background:#162046;border:1px solid #2a3b7d;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe0ff;cursor:pointer}
+hr{border:none;border-top:1px solid var(--line);margin:12px 0}
+table{width:100%;border-collapse:separate;border-spacing:0 8px}
+th,td{padding:10px 12px;background:var(--panel2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{border-left:1px solid var(--line);border-top-left-radius:10px;border-bottom-left-radius:10px}
+th:last-child,td:last-child{border-right:1px solid var(--line);border-top-right-radius:10px;border-bottom-right-radius:10px}
+.right{text-align:right}
+.small{font-size:12px}
+.flex{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;right:16px;bottom:16px;background:#111a38;color:#cfe0ff;border:1px solid #2a3b7d;padding:10px 14px;border-radius:10px;opacity:0;transform:translateY(10px);transition:.25s}
+.toast.show{opacity:1;transform:translateY(0)}
+.modal{position:fixed;inset:0;background:#00000080;display:none;align-items:center;justify-content:center;padding:16px}
+.modal>div{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:720px;width:100%;padding:16px}
+.headerBtns button{padding:6px 10px;border-radius:999px}
+.quick button{background:#1a2550;border:1px solid #2a3b7d}
+</style>
+</head>
+<body>
+  <div id="topnav"></div>
+<script>
+  fetch('head.html').then(r=>r.text()).then(h=>{ document.getElementById('topnav').innerHTML = h; });
+</script>
+<div class="wrap">
+  <h1>입고 스캔 변환 PRO</h1>
+  <div class="sub">멀티 키 매칭 → <b>스캔 변환 대상 채널(헤더)</b>로 강제 변환 · 숫자/문자 자동 정규화 · CSV/XLSX 내보내기 · 프리셋 저장</div>
+
+  <!-- Header quick actions -->
+  <div class="flex headerBtns" style="margin:10px 0 16px">
+    <button id="btnSavePreset" class="ghost">현재 설정 프리셋 저장</button>
+    <button id="btnLoadPreset" class="ghost">프리셋 불러오기</button>
+    <span class="muted small">·</span>
+    <div class="quick" id="quickTargets" class="flex"></div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1fr;">
+    <!-- 1) 업로드 & 설정 -->
+    <div class="panel">
+      <div class="row">
+        <div class="col">
+          <label>엑셀 업로드</label>
+          <input type="file" id="file" accept=".xlsx,.xls"/>
+        </div>
+        <div style="width:220px">
+          <label>시트 선택</label>
+          <select id="sheet"></select>
+        </div>
+        <div style="width:200px;align-self:end">
+          <button id="loadSheet">시트 불러오기</button>
+        </div>
+        <div class="flex" style="margin-left:auto">
+          <span class="muted small">상태:</span>
+          <span id="status" class="small muted">-</span>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <div class="col">
+          <label>검색(키) 열 — 체크한 모든 열에서 값을 찾아 같은 행을 매칭</label>
+          <div id="keyCols" class="chips"></div>
+        </div>
+        <div style="width:340px">
+          <label>스캔 변환 대상 채널 (출력 열)</label>
+          <select id="targetCol"></select>
+        </div>
+        <div style="width:200px;align-self:end">
+          <button id="buildIndex" class="ok">인덱스 생성</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:6px">
+        <label class="pill"><input type="checkbox" id="digitsOnly"/> 숫자만 비교</label>
+        <label class="pill"><input type="checkbox" id="caseFold" checked/> 대소문자 무시</label>
+        <label class="pill"><input type="checkbox" id="collapseSpace" checked/> 연속 공백 축약</label>
+        <label class="pill"><input type="checkbox" id="preferExact" checked/> 완전일치 우선(중복키 대비)</label>
+      </div>
+    </div>
+
+    <!-- 2) 스캔/집계 -->
+    <div class="panel">
+      <div class="row">
+        <div class="col">
+          <label>스캔/입력 (바코드 · 옵션명 · 상품코드 등) — Enter</label>
+          <input type="text" id="scanInput" placeholder="값을 입력하고 Enter"/>
+        </div>
+        <div style="width:200px;align-self:end">
+          <button id="resetPallet" class="secondary">현재 파레트 초기화</button>
+        </div>
+        <div style="width:200px;align-self:end">
+          <button id="exportCSV" class="ghost">CSV 내보내기</button>
+          <button id="exportXLSX" class="ghost">XLSX 내보내기</button>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <table id="tbl">
+          <thead>
+            <tr>
+              <th style="width:56px">#</th>
+              <th>변환값(타겟 채널)</th>
+              <th class="right" style="width:120px">수량</th>
+              <th>상품코드/명</th>
+              <th style="width:200px">작업</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- 중복키 모달 -->
+<div class="modal" id="dupModal">
+  <div>
+    <h3 style="margin:0 0 8px">중복 후보 선택</h3>
+    <div class="sub" style="margin-bottom:10px">입력값과 일치하는 행이 여러 개 발견되었습니다. 원하는 행을 선택하세요.</div>
+    <div id="dupList" style="max-height:300px;overflow:auto;margin-bottom:12px"></div>
+    <div class="flex" style="justify-content:flex-end">
+      <button class="ghost" onclick="hideModal()">취소</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let workbook, data = [], headers = [];
+let rows = [];             // 원본 행
+let indexMap = new Map();  // key -> [rowIndex,...] (중복 지원)
+let pallet = [];           // {out, qty, skuName}
+const el = id => document.getElementById(id);
+
+function toast(t, ok=false){
+  const box = el('toast'); box.textContent = t;
+  box.style.borderColor = ok ? '#2f855a' : '#2a3b7d';
+  box.classList.add('show'); setTimeout(()=> box.classList.remove('show'), 1600);
+}
+
+function setStatus(msg, ok=false){ el('status').textContent = msg; el('status').className = ok?'ok small':'muted small'; }
+
+function normalize(v){
+  let s = v==null ? '' : String(v);
+  s = s.trim();
+  if (el('digitsOnly').checked) s = s.replace(/\D+/g,'');
+  if (el('caseFold').checked) s = s.toLowerCase();
+  if (el('collapseSpace').checked) s = s.replace(/\s+/g,' ');
+  return s;
+}
+
+function loadHeadersFromSheet(ws){
+  const json = XLSX.utils.sheet_to_json(ws, {defval:'', raw:false});
+  data = json;
+  headers = Object.keys(json[0] || {});
+  // 키 체크박스
+  const box = el('keyCols'); box.innerHTML='';
+  headers.forEach(h=>{
+    const id = 'key_'+h;
+    const lab = document.createElement('label');
+    lab.className='pill'; lab.innerHTML = `<input type="checkbox" id="${id}" checked/> ${h}`;
+    box.appendChild(lab);
+  });
+  // 타겟 선택
+  const sel = el('targetCol'); sel.innerHTML='';
+  headers.forEach(h=>{ const o=document.createElement('option'); o.value=h; o.textContent=h; sel.appendChild(o); });
+  setStatus(`헤더 ${headers.length}개, 데이터 ${json.length}행 로드됨`, true);
+  buildQuickTargets(headers);
+}
+
+function buildIndex(){
+  indexMap = new Map();
+  rows = data;
+  const keyCols = headers.filter(h => el('key_'+h)?.checked);
+  let cnt=0;
+  for (let r=0;r<rows.length;r++){
+    const row = rows[r];
+    for (const col of keyCols){
+      const v = normalize(row[col]);
+      if (!v) continue;
+      if (!indexMap.has(v)) indexMap.set(v, []);
+      const arr = indexMap.get(v);
+      // 동일 행 중복 추가 방지
+      if (arr[arr.length-1] !== r) arr.push(r);
+      cnt++;
+    }
+  }
+  setStatus(`인덱스 생성 완료: 키 ${indexMap.size}개`, true);
+  alert('인덱스가 생성되었습니다.');
+}
+
+function appendOrInc(outValue, skuName){
+  const key = outValue || '미매핑';
+  let found = pallet.find(p=>p.out===key);
+  if (found){ found.qty++; render(); return; }
+  pallet.push({out:key, qty:1, skuName});
+  render();
+}
+
+function render(){
+  const tb = document.querySelector('#tbl tbody');
+  tb.innerHTML='';
+  pallet.forEach((p,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="right">${i+1}</td>
+      <td>${p.out==='미매핑'?'<span class="bad">미매핑</span>':p.out}</td>
+      <td class="right">
+        <input type="number" min="0" value="${p.qty}" data-i="${i}" class="qty" style="width:80px;background:#0e1530;border:1px solid #253064;border-radius:8px;color:#fff;padding:6px 8px">
+      </td>
+      <td>${p.skuName||''}</td>
+      <td>
+        <button data-i="${i}" class="dec">-1</button>
+        <button data-i="${i}" class="rm danger">삭제</button>
+      </td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('.dec').forEach(b=> b.onclick=(e)=>{const i=+e.target.dataset.i; pallet[i].qty=Math.max(0,pallet[i].qty-1); render();});
+  tb.querySelectorAll('.rm').forEach(b=> b.onclick=(e)=>{const i=+e.target.dataset.i; pallet.splice(i,1); render();});
+  tb.querySelectorAll('.qty').forEach(inp=> inp.onchange=(e)=>{const i=+e.target.dataset.i; pallet[i].qty=Math.max(0,parseInt(e.target.value||'0',10));});
+}
+
+function chooseFromDuplicates(key, candidates){
+  return new Promise(resolve=>{
+    const modal = el('dupModal'); const list = el('dupList'); list.innerHTML='';
+    candidates.forEach(r=>{
+      const row = rows[r];
+      const skuName = [row['상품코드']||'', row['상품명']||'', row['옵션']||''].filter(Boolean).join(' / ');
+      const div = document.createElement('div');
+      div.className='panel'; div.style.padding='10px'; div.style.margin='6px 0';
+      div.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div>
+          <div><b>${skuName||'(정보없음)'}</b></div>
+          <div class="small muted">행 인덱스: ${r} · 키: ${key}</div>
+        </div>
+        <div><button class="ok">선택</button></div>
+      </div>`;
+      div.querySelector('button').onclick = ()=>{ hideModal(); resolve(r); };
+      list.appendChild(div);
+    });
+    modal.style.display='flex';
+  });
+}
+function hideModal(){ el('dupModal').style.display='none'; }
+
+async function onScanEnter(e){
+  if (e.key !== 'Enter') return;
+  const raw = el('scanInput').value; el('scanInput').value='';
+  if (!raw) return;
+  const key = normalize(raw);
+  const arr = indexMap.get(key);
+  if (!arr || arr.length===0){ appendOrInc('미매핑',''); toast('미매핑: 인덱스에 없음'); return; }
+  let ridx = arr[0];
+  if (arr.length>1 && !el('preferExact').checked){
+    ridx = await chooseFromDuplicates(key, arr);
+    if (ridx==null) return;
+  }
+  const row = rows[ridx];
+  const target = el('targetCol').value;
+  const out = String(row[target] ?? '').trim();
+  const skuName = [row['상품코드']||'', row['상품명']||'', row['옵션']||''].filter(Boolean).join(' / ');
+  appendOrInc(out || '미매핑', skuName);
+}
+
+function exportCSV(){
+  const header = ['변환값','수량','상품코드/명'];
+  const rowsOut = pallet.map(p=>[p.out,p.qty,p.skuName]);
+  const ws = XLSX.utils.aoa_to_sheet([header,...rowsOut]);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '팔렛트');
+  XLSX.writeFile(wb, 'scan_result.csv');
+  toast('CSV로 저장했습니다', true);
+}
+function exportXLSX(){
+  const header = ['변환값','수량','상품코드/명'];
+  const rowsOut = pallet.map(p=>[p.out,p.qty,p.skuName]);
+  const ws = XLSX.utils.aoa_to_sheet([header,...rowsOut]);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '팔렛트');
+  XLSX.writeFile(wb, 'scan_result.xlsx');
+  toast('XLSX로 저장했습니다', true);
+}
+
+function buildQuickTargets(hs){
+  const box = document.getElementById('quickTargets'); box.innerHTML='';
+  const picks = hs.filter(h=>/제트배송|직진배송|스마일|파스토|쿠팡|더|수/i.test(h));
+  picks.forEach(h=>{
+    const b = document.createElement('button'); b.textContent=h; b.onclick=()=>{ el('targetCol').value=h; toast('타겟: '+h,true); };
+    box.appendChild(b);
+  });
+}
+
+function savePreset(){
+  const keyCols = headers.filter(h=> el('key_'+h)?.checked);
+  const preset = {
+    headers, sheet: el('sheet').value, keyCols, target: el('targetCol').value,
+    digitsOnly: el('digitsOnly').checked, caseFold: el('caseFold').checked,
+    collapseSpace: el('collapseSpace').checked, preferExact: el('preferExact').checked
+  };
+  localStorage.setItem('scan_pro_preset', JSON.stringify(preset));
+  toast('프리셋 저장됨', true);
+}
+function loadPreset(){
+  const s = localStorage.getItem('scan_pro_preset');
+  if (!s){ toast('저장된 프리셋이 없습니다'); return; }
+  const p = JSON.parse(s);
+  // 헤더가 동일해야 정확히 복원됨
+  p.keyCols?.forEach(h=>{ const cb = el('key_'+h); if (cb) cb.checked=true; });
+  if (p.target && el('targetCol').querySelector(`option[value="${p.target}"]`)) el('targetCol').value=p.target;
+  ['digitsOnly','caseFold','collapseSpace','preferExact'].forEach(id=>{ if (typeof p[id]==='boolean') el(id).checked=p[id]; });
+  toast('프리셋 적용', true);
+}
+
+el('file').addEventListener('change', async ev=>{
+  const f = ev.target.files[0]; if (!f) return;
+  const buf = await f.arrayBuffer(); workbook = XLSX.read(buf, {type:'array'});
+  const sel = el('sheet'); sel.innerHTML=''; workbook.SheetNames.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;sel.appendChild(o);});
+  setStatus(`파일 로드됨: 시트 ${workbook.SheetNames.length}개`);
+});
+el('loadSheet').onclick = ()=>{
+  if (!workbook){ alert('파일을 먼저 선택하세요'); return; }
+  const ws = workbook.Sheets[el('sheet').value]; loadHeadersFromSheet(ws);
+};
+el('buildIndex').onclick = buildIndex;
+el('scanInput').addEventListener('keydown', onScanEnter);
+el('resetPallet').onclick = ()=>{ pallet=[]; render(); toast('리셋 완료', true); };
+el('exportCSV').onclick = exportCSV;
+el('exportXLSX').onclick = exportXLSX;
+document.getElementById('btnSavePreset').onclick = savePreset;
+document.getElementById('btnLoadPreset').onclick = loadPreset;
+</script>
+</body>
+</html>
+
+

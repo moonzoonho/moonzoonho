@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>엑셀 업로드 (DB 전송)</title>
+<style>
+:root{--bg:#0a0f1f;--panel:#121a2d;--line:#1c274a;--text:#eaf0ff;--muted:#9fb1ff}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,Arial}
+.wrap{max-width:600px;margin:40px auto;padding:0 16px}
+h1{margin-bottom:10px;font-size:20px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
+label{display:block;margin-bottom:6px;font-size:13px;color:var(--muted)}
+input[type=file]{width:100%;margin-bottom:12px}
+button{background:#304ab1;border:none;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+#status{margin-top:12px;font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="topnav"></div>
+<script>
+  // 공통 메뉴(head.html) 불러오기
+  fetch('head.html').then(r=>r.text()).then(h=>{document.getElementById('topnav').innerHTML=h;});
+</script>
+
+<div class="wrap">
+  <h1>엑셀 업로드</h1>
+  <div class="panel">
+    <form id="uploadForm">
+      <label>업로드할 엑셀 파일 (.xls, .xlsx)</label>
+      <input type="file" id="file" name="file" accept=".xls,.xlsx" required/>
+      <button type="submit">업로드</button>
+    </form>
+    <div id="status">대기 중...</div>
+  </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const f = document.getElementById('file').files[0];
+  if(!f){ alert("파일을 선택하세요."); return; }
+
+  const fd = new FormData();
+  fd.append('file', f);
+
+  // 🚨 TODO: 서버 업로드 API 경로 맞게 교체하세요.
+  // 예: Django라면 /catalog/upload-xlsx/
+  try{
+    const res = await fetch('/catalog/upload-xlsx/',{method:'POST',body:fd});
+    const js = await res.json();
+    document.getElementById('status').textContent =
+      "업로드 완료: 배치ID "+(js.batch_id||'?')+" (품목 "+(js.items||'?')+"개)";
+  }catch(err){
+    document.getElementById('status').textContent = "업로드 실패: "+err;
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>입고/출고 스캔 변환 PRO (최종입고 양식)</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net"/>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#0a0f1f;--panel:#121a2d;--panel2:#0d1428;--line:#1c274a;--text:#eaf0ff;--muted:#9fb1ff;--ok:#3eea9a;--bad:#ff6b6b}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Apple SD Gothic Neo,Noto Sans KR,Arial}
+.wrap{max-width:1200px;margin:26px auto;padding:0 16px}
+h1{margin:0 0 10px;font-size:22px;font-weight:800}
+.sub{color:var(--muted);font-size:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.col{flex:1;min-width:220px}
+label{display:block;margin:0 0 6px;font-size:12px;color:var(--muted)}
+input[type="text"],input[type="number"],select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:10px 12px;font-size:14px;outline:none}
+button{background:#304ab1;border:none;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+button.secondary{background:#243161}button.ghost{background:transparent;border:1px solid #2a3b7d}button.danger{background:var(--bad)}
+.bad{color:var(--bad)}.ok{color:var(--ok)}.muted{color:var(--muted)}.small{font-size:12px}
+.kbd{background:#00000050;border:1px solid #2a3b7d;border-bottom-color:#1b2550;border-radius:6px;padding:2px 6px;font-family:ui-monospace,Consolas,Menlo,monospace}
+.toast{position:fixed;right:16px;bottom:16px;background:#111a38;color:#cfe0ff;border:1px solid #2a3b7d;padding:10px 14px;border-radius:10px;opacity:0;transform:translateY(10px);transition:.25s}
+.toast.show{opacity:1;transform:translateY(0)}
+.pill{display:inline-flex;align-items:center;gap:6px;background:#162046;border:1px solid #2a3b7d;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe0ff;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.badge{display:inline-block;border:1px solid #2a3b7d;border-radius:999px;padding:2px 8px;font-size:12px;background:#1a2550}
+hr{border:none;border-top:1px solid var(--line);margin:12px 0}
+.tableWrap{margin-top:12px}
+table{width:100%;border-collapse:separate;border-spacing:0 8px}
+th,td{padding:10px 12px;background:var(--panel2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{border-left:1px solid var(--line);border-top-left-radius:10px;border-bottom-left-radius:10px}
+th:last-child,td:last-child{border-right:1px solid var(--line);border-top-right-radius:10px;border-bottom-right-radius:10px}
+.right{text-align:right}
+</style>
+</head>
+<body>
+  <div id="topnav"></div>
+<script>
+  // 공통 메뉴(head.html) 불러오기
+  fetch('head.html').then(r=>r.text()).then(h=>{document.getElementById('topnav').innerHTML=h;});
+</script>
+<div class="wrap">
+  <h1>입고/출고 스캔 변환 PRO</h1>
+  <div class="sub">① 마스터(더/수 로켓입고) 업로드 → ② 인덱스 생성 → ③ 정규 바코드 스캔 → ④ 파레트별 집계 → ⑤ 최종입고(더 로켓입고 양식) 내보내기</div>
+
+  <!-- 업로드 & 설정 패널 (전체 포함) -->
+  <div class="panel">
+    <div class="row">
+      <div class="col">
+        <label>엑셀 업로드</label>
+        <input type="file" id="file" accept=".xlsx,.xls"/>
+      </div>
+      <div style="width:220px">
+        <label>시트 선택</label>
+        <select id="sheet"></select>
+      </div>
+      <div style="width:200px;align-self:end">
+        <button id="loadSheet">시트 불러오기</button>
+      </div>
+      <div class="row" style="margin-left:auto">
+        <span class="small muted">상태:</span>
+        <span id="status" class="small badge">-</span>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <div class="col">
+        <label>검색(키) 열 — 체크된 모든 열에서 매칭 (바코드는 자동 포함)</label>
+        <div id="keyCols" class="chips"></div>
+      </div>
+
+      <div style="width:460px">
+        <label style="display:flex;align-items:center;gap:10px">
+          <span>스캔 변환 대상(타겟) 열</span>
+          <label class="pill" style="margin-left:auto">
+            <input type="checkbox" id="manualTarget"/> 수동 선택
+          </label>
+        </label>
+        <select id="targetCol"></select>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="ghost" id="btnSheetDeo">더 로켓입고 시트로</button>
+          <button type="button" class="ghost" id="btnSheetSu">수 로켓입고 시트로</button>
+        </div>
+      </div>
+
+      <div style="width:200px;align-self:end">
+        <button id="buildIndex" class="ok">인덱스 생성</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:6px">
+      <label class="pill"><input type="checkbox" id="digitsOnly"/> 숫자만 비교</label>
+      <label class="pill"><input type="checkbox" id="caseFold" checked/> 대소문자 무시</label>
+      <label class="pill"><input type="checkbox" id="collapseSpace" checked/> 연속 공백 축약</label>
+      <label class="pill"><input type="checkbox" id="preferExact" checked/> 완전일치 우선</label>
+      <div style="margin-left:auto" class="small muted">자동 매핑: <span id="mapStatus" class="badge">-</span></div>
+    </div>
+  </div>
+
+  <!-- 스캔/집계 패널 -->
+  <div class="panel">
+    <div class="row">
+      <div class="col">
+        <label>스캔/입력 (정규 바코드) — Enter</label>
+        <input type="text" id="scanInput" placeholder="바코드 입력 후 Enter"/>
+      </div>
+
+      <div style="width:300px;align-self:end;display:flex;gap:8px;align-items:center;justify-content:flex-end">
+        <span class="small muted">현재 파레트:</span>
+        <span id="palletName" class="badge">1P</span>
+        <button id="newPallet" class="ghost" title="F2">새 파레트 시작</button>
+      </div>
+
+      <div style="width:200px;align-self:end">
+        <button id="resetPallet" class="secondary">현재 파레트 초기화</button>
+      </div>
+
+      <div style="width:520px;align-self:end">
+        <button id="exportCSV" class="ghost">CSV 내보내기</button>
+        <button id="exportXLSX" class="ghost">최종입고(더 로켓입고 양식) XLSX</button>
+        <button id="exportShipXLSX" class="ghost">출고용 XLSX</button>
+      </div>
+    </div>
+
+    <!-- 파레트 전환 칩 -->
+    <div id="palletChips" class="chips" style="margin-top:8px"></div>
+
+    <div class="tableWrap">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th style="width:56px">#</th>
+            <th>변환값(바코드)</th>
+            <th class="right" style="width:120px">수량</th>
+            <th>상품코드/명</th>
+            <th style="width:220px">작업</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="small muted" style="margin-top:6px">단축키: <span class="kbd">Enter</span>=스캔, <span class="kbd">F2</span>=새 파레트 시작</div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- 이동 모달 -->
+<div id="moveModal" class="toast" style="left:16px; right:auto; bottom:16px; width:340px; max-width:90vw; display:none">
+  <div class="small" id="moveTitle" style="margin-bottom:8px"></div>
+  <div>
+    <label class="small muted" style="display:block;margin-bottom:6px">이동할 파레트 선택</label>
+    <select id="moveTarget" style="width:100%;background:#0e1530;border:1px solid #253064;border-radius:8px;color:#fff;padding:6px 8px"></select>
+  </div>
+  <div style="display:flex; gap:8px; margin-top:10px; justify-content:flex-end">
+    <button id="moveCancel" class="ghost">취소</button>
+    <button id="moveDo" class="ok">이동</button>
+  </div>
+</div>
+
+<script>
+let workbook, data=[], headers=[], rows=[];
+let indexMap=new Map();
+let pallets=[ { name:'1P', items:[] } ]; // items: { out, qty, skuName, row }
+let currentPallet=0;
+let autoMap={};
+
+const el=id=>document.getElementById(id);
+function toast(t, ok=false){const b=el('toast');b.textContent=t;b.style.borderColor=ok?'#2f855a':'#2a3b7d';b.classList.add('show');setTimeout(()=>b.classList.remove('show'),1600);} 
+function setStatus(t){ el('status').textContent=t; }
+function curItems(){ return pallets[currentPallet].items; }
+function setPalletBadge(){ el('palletName').textContent = pallets[currentPallet].name; }
+
+function normalize(v){
+  let s = v==null ? '' : String(v).trim();
+
+  // 공백 제거
+  s = s.replace(/[\s\u00A0]+/g,'');
+
+  // Excel이 숫자 바코드를 지수표기(E+12)로 바꾸는 경우
+  if(/^\d+(\.\d+)?e\+\d+$/i.test(s)){
+    // 지수표기를 BigInt로 변환
+    try { s = BigInt(s).toString(); } catch(e){}
+  }
+
+  // Excel이 뒤에 .0 붙이는 경우
+  if(/^\d+\.0$/.test(s)){
+    s = s.replace(/\.0$/,'');
+  }
+
+  if(el('digitsOnly')?.checked) s = s.replace(/\D+/g,'');
+  if(el('caseFold')?.checked) s = s.toLowerCase();
+  if(el('collapseSpace')?.checked) s = s.replace(/\s+/g,' ');
+
+  return s.trim();
+}
+
+
+function pickHeader(cands){ for(const c of cands){ if(headers.includes(c)) return c; } return null; }
+function guessBarcodeHeader(){ return pickHeader(["상품바코드(필수)","상품바코드","바코드","쿠팡바코드"]); }
+function buildAutoMap(){
+  autoMap = {
+    regName:  pickHeader(["등록상품명","상품명","상품名稱"]),
+    optName:  pickHeader(["옵션명","옵션","규격"]),
+    exposeId: pickHeader(["노출상품 ID","노출ID"]),
+    productId:pickHeader(["등록상품 ID","상품ID","상품코드","내부SKU"]),
+    optionId: pickHeader(["옵션 ID","옵션코드"]),
+    barcode:  guessBarcodeHeader(),
+    price:    pickHeader(["판매가","단가","가격"]),
+    size:     pickHeader(["상품 사이즈","사이즈","규격"]),
+    care:     pickHeader(["취급주의여부","취급주의"]),
+    stock:    pickHeader(["판매가능재고","재고"]),
+    category: pickHeader(["카테고리","분류"]),
+    qtyCol:   pickHeader(["입고 수량 입력(필수)","입고 수량 입력","입고수량"])
+  };
+  el('mapStatus').textContent = autoMap.barcode ? "양호" : "확인 필요";
+}
+
+function applyAutoTargetIfNeeded(){
+  const manual = el('manualTarget')?.checked;
+  const bc = guessBarcodeHeader();
+  if (!manual && bc) el('targetCol').value = bc;
+  el('targetCol').disabled = !manual;
+}
+
+el('file').addEventListener('change', async ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const buf=await f.arrayBuffer(); workbook=XLSX.read(buf,{type:'array'});
+  const sel=el('sheet'); sel.innerHTML='';
+  workbook.SheetNames.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;sel.appendChild(o);});
+  setStatus(`시트 ${workbook.SheetNames.length}개`);
+});
+
+el('loadSheet').onclick=()=>{
+  if(!workbook){ alert('파일 먼저 선택'); return; }
+  const ws=workbook.Sheets[el('sheet').value];
+  const json=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+  data=json; rows=data; headers=Object.keys(json[0]||{});
+
+  const box=el('keyCols'); box.innerHTML='';
+  headers.forEach(h=>{ const lab=document.createElement('label'); lab.className='pill'; lab.innerHTML=`<input type="checkbox" id="key_${h}" checked/> ${h}`; box.appendChild(lab); });
+
+  const sel=el('targetCol'); sel.innerHTML='';
+  headers.forEach(h=>{ const o=document.createElement('option'); o.value=h; o.textContent=h; sel.appendChild(o); });
+
+  buildAutoMap();
+  applyAutoTargetIfNeeded();
+  setStatus(`헤더 ${headers.length}개, 데이터 ${rows.length}행`);
+};
+
+el('manualTarget').addEventListener('change', applyAutoTargetIfNeeded);
+
+function quickSelectSheet(keyword){
+  const sel = el('sheet');
+  const opt = [...sel.options].find(o => (o.value||"").includes(keyword));
+  if (!opt){ toast(`시트에 '${keyword}'가 없습니다`); return; }
+  sel.value = opt.value; el('loadSheet').click();
+}
+el('btnSheetDeo').onclick = ()=> quickSelectSheet("더 로켓입고");
+el('btnSheetSu').onclick  = ()=> quickSelectSheet("수 로켓입고");
+
+el('buildIndex').onclick=()=>{
+  indexMap=new Map();
+  let keyCols=headers.filter(h=> el('key_'+h)?.checked);
+  const must = guessBarcodeHeader();
+  if (must && !keyCols.includes(must)) keyCols = [must, ...keyCols];
+  if(!keyCols.length){ alert('키 열을 1개 이상 선택'); return; }
+
+  for(let r=0;r<rows.length;r++){
+    const row=rows[r];
+    for(const c of keyCols){
+      const k=normalize(row[c]); if(!k) continue;
+      if(!indexMap.has(k)) indexMap.set(k,[]);
+      const arr=indexMap.get(k); if(arr[arr.length-1]!==r) arr.push(r);
+    }
+  }
+  toast(`인덱스 생성 완료: 키 ${indexMap.size}개`, true);
+};
+
+function newPallet(){
+  const next = (pallets.length + 1) + 'P';
+  pallets.push({ name: next, items: [] });
+  currentPallet = pallets.length - 1;
+  setPalletBadge();
+  render();
+  renderPalletChips();
+  toast(`${next} 시작`, true);
+}
+function resetCurrentPallet(){
+  pallets[currentPallet].items = [];
+  render();
+  renderPalletChips();
+  toast(`${pallets[currentPallet].name} 리셋`, true);
+}
+el('resetPallet').onclick = resetCurrentPallet;
+el('newPallet').onclick = newPallet;
+document.addEventListener('keydown', (e)=>{
+  if(e.key === 'F2'){ e.preventDefault(); newPallet(); }
+});
+
+el('scanInput').addEventListener('keydown', e=>{
+  if(e.key!== 'Enter') return;
+  const raw=el('scanInput').value; el('scanInput').value=''; if(!raw) return;
+  const key=normalize(raw); const arr=indexMap.get(key);
+  if(!arr||!arr.length){ appendOrInc('미매핑','',null); toast('미매핑: 인덱스에 없음'); return; }
+  const ridx=arr[0]; const row=rows[ridx];
+  const target=el('targetCol').value;
+  const out=String(row[target] ?? '').trim();
+  const skuName=[ row[autoMap.productId]||row['등록상품 ID']||'',
+                  row[autoMap.regName]||row['등록상품명']||row['상품명']||'',
+                  row[autoMap.optName]||row['옵션명']||'' ].filter(Boolean).join(' / ');
+  appendOrInc(out || '미매핑', skuName, row);
+});
+
+function appendOrInc(outValue, skuName, rowObj){
+  const items = curItems();
+  const key = outValue || '미매핑';
+  let f = items.find(p=>p.out===key);
+  if(f){ f.qty++; render(); return; }
+  items.push({ out: key, qty: 1, skuName, row: rowObj || null });
+  render();
+}
+
+function render(){
+  setPalletBadge();
+  const items = curItems();
+  const tb=document.querySelector('#tbl tbody'); tb.innerHTML='';
+  items.forEach((p,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML = `
+      <td class="right">${i+1}</td>
+      <td>${p.out==='미매핑'?'<span class="bad">미매핑</span>':p.out}</td>
+      <td class="right"><input type="number" min="0" value="${p.qty}" data-i="${i}" class="qty" style="width:80px;background:#0e1530;border:1px solid #253064;border-radius:8px;color:#fff;padding:6px 8px"></td>
+      <td>${p.skuName||''}</td>
+      <td><button data-i="${i}" class="dec">-1</button> <button data-i="${i}" class="mv ghost">이동</button> <button data-i="${i}" class="rm danger">삭제</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('.dec').forEach(b=> b.onclick=e=>{const i=+e.target.dataset.i; items[i].qty=Math.max(0,items[i].qty-1); render();});
+  tb.querySelectorAll('.rm').forEach(b=> b.onclick=e=>{const i=+e.target.dataset.i; items.splice(i,1); render();});
+  tb.querySelectorAll('.qty').forEach(inp=> inp.onchange=e=>{const i=+e.target.dataset.i; items[i].qty=Math.max(0,parseInt(e.target.value||'0',10));});
+  tb.querySelectorAll('.mv').forEach(b=> b.onclick=e=>{ const i=+e.target.dataset.i; openMoveModal(i); });
+  renderPalletChips();
+}
+
+function exportCSV(){ 
+  const items = curItems();
+  if(!items.length){ alert('먼저 스캔/집계를 완료하세요'); return; }
+  const ws=XLSX.utils.aoa_to_sheet([[`파레트: ${pallets[currentPallet].name}`],[],['변환값','수량','상품코드/명'], ...items.map(p=>[p.out,p.qty,p.skuName])]);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, pallets[currentPallet].name); XLSX.writeFile(wb, `${pallets[currentPallet].name}_scan.csv`); toast('CSV 저장', true); 
+}
+el('exportCSV').onclick=exportCSV;
+
+function palletTotal(p){ return p.items.reduce((a,b)=>a+b.qty,0); }
+function renderPalletChips(){
+  const box = document.getElementById('palletChips'); if(!box) return;
+  box.innerHTML='';
+  pallets.forEach((P, idx)=>{
+    const chip = document.createElement('button');
+    chip.className = 'pill';
+    chip.style.userSelect = 'none';
+    chip.title = '클릭: 전환 / 더블클릭: 이름 바꾸기';
+    chip.innerHTML = `${idx===currentPallet?'✅ ':''}${P.name} <span class="muted">(${palletTotal(P)})</span>`;
+    chip.onclick = ()=>{ currentPallet = idx; setPalletBadge(); render(); renderPalletChips(); };
+    chip.ondblclick = ()=>{
+      const nv = prompt('파레트 이름 변경', P.name);
+      if(nv && nv.trim()){ P.name = nv.trim(); setPalletBadge(); renderPalletChips(); }
+    };
+    box.appendChild(chip);
+  });
+}
+
+// 이동 모달
+let movingIndex = null;
+function openMoveModal(i){
+  movingIndex = i;
+  const items = curItems();
+  const it = items[i];
+  const modal = document.getElementById('moveModal');
+  const title = document.getElementById('moveTitle');
+  const sel = document.getElementById('moveTarget');
+
+  title.textContent = `이동할 항목: ${it.out || '미매핑'} (${it.qty})`;
+  sel.innerHTML = '';
+  pallets.forEach((P, idx)=>{
+    const o = document.createElement('option');
+    o.value = String(idx);
+    o.textContent = `${P.name} (${palletTotal(P)})${idx===currentPallet?' — 현재':''}`;
+    sel.appendChild(o);
+  });
+
+  modal.style.display='block';
+  modal.classList.add('show');
+}
+document.getElementById('moveCancel').onclick = ()=>{
+  const modal = document.getElementById('moveModal');
+  modal.classList.remove('show');
+  modal.style.display='none';
+  movingIndex = null;
+};
+document.getElementById('moveDo').onclick = ()=>{
+  const modal = document.getElementById('moveModal');
+  const targetIdx = parseInt(document.getElementById('moveTarget').value,10);
+  if (isNaN(targetIdx)) return;
+
+  const items = curItems();
+  if (movingIndex==null || !items[movingIndex]) return;
+  const it = items[movingIndex];
+
+  items.splice(movingIndex,1);
+
+  const tgt = pallets[targetIdx].items;
+  const same = tgt.find(x=>x.out===it.out);
+  if(same){ same.qty += it.qty; }
+  else { tgt.push(it); }
+
+  modal.classList.remove('show');
+  modal.style.display='none';
+  movingIndex = null;
+  renderPalletChips();
+  render();
+  toast(`'${it.out||'미매핑'}' → ${pallets[targetIdx].name} 이동`, true);
+};
+
+// 최종입고(더 로켓입고 양식) + 파레트별 시트 + Summary
+function exportInboundCombinedXLSX(){
+  const sheetName = el('sheet')?.value || "";
+  if (!/더\s*로켓입고|수\s*로켓입고/i.test(sheetName)){
+    alert("합본/파레트별 서류는 '더 로켓입고' 또는 '수 로켓입고' 시트에서만 가능합니다."); return;
+  }
+  if(!pallets.some(P=>P.items.length)){
+    alert('먼저 바코드 스캔/집계를 완료하세요.');
+    return;
+  }
+
+  const palletCount = pallets.length;
+  const headerFinal = (function(){
+    const base = ['바코드', '입고 총수량'];
+    for(let i=1;i<=palletCount;i++) base.push('팔레트'+i);
+    base.push('상품명','옵션','총수량');
+    return base;
+  })();
+
+  const target = el('targetCol').value;
+  const skuKey   = autoMap.productId || '상품코드';
+  const nameKey  = autoMap.regName   || '상품명';
+  const optKey   = autoMap.optionId  || '옵션ID';
+
+  const merged = new Map();
+  pallets.forEach((P,pIdx)=>{
+    P.items.forEach(it=>{
+      const code = (it.out||'').trim();
+      if(!code || code==='미매핑') return;
+      if(!merged.has(code)) merged.set(code, { total:0, per:Array(palletCount).fill(0), row: it.row });
+      const bucket = merged.get(code);
+      bucket.total += it.qty;
+      bucket.per[pIdx] += it.qty;
+      if(!bucket.row && it.row) bucket.row = it.row;
+    });
+  });
+
+  const rowsFinal = [];
+  for(const [code, info] of merged.entries()){
+    const row = info.row || {};
+    const NAME  = row[nameKey] ?? row['등록상품명'] ?? row['상품명'] ?? '';
+    const OPT   = row[optKey]  ?? row['옵션 ID']   ?? row['옵션코드'] ?? row['옵션'] ?? '';
+    const out = [code, info.total, ...info.per, NAME, OPT, info.total];
+    rowsFinal.push(out);
+  }
+
+  rowsFinal.sort((a,b)=> String(a[0]).localeCompare(String(b[0]), 'ko'));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headerFinal, ...rowsFinal]), '최종입고');
+
+  pallets.forEach((P,idx)=>{
+    const hdr=['바코드','수량','상품명','옵션'];
+    const body=P.items
+      .filter(it=>it.out && it.out!=='미매핑')
+      .map(it=>{
+        const r = it.row||{};
+        const NAME = r[nameKey] ?? r['등록상품명'] ?? r['상품명'] ?? '';
+        const OPT  = r[optKey]  ?? r['옵션 ID']   ?? r['옵션코드'] ?? r['옵션'] ?? '';
+        return [it.out, it.qty, NAME, OPT];
+      });
+    const nameSafe = ((idx+1)+'P').slice(0,31);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([hdr, ...body]), nameSafe);
+  });
+
+  const sumHdr = ['파레트명','품목종수','총수량'];
+  const sumBody = pallets.map(P=>{
+    const items = P.items.filter(it=>it.out && it.out!=='미매핑');
+    const kinds = new Set(items.map(it=>it.out)).size;
+    const total = items.reduce((a,b)=>a+b.qty,0);
+    return [P.name, kinds, total];
+  });
+  const totalQty = pallets.reduce((a,P)=>a+P.items.reduce((x,it)=>x+it.qty,0),0);
+  const allKinds = new Set(pallets.flatMap(P=>P.items).filter(it=>it.out && it.out!=='미매핑').map(it=>it.out)).size;
+  sumBody.push(['합계', allKinds, totalQty]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([sumHdr, ...sumBody]), 'Summary');
+
+  const n=new Date();
+  const ts=`${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}_${String(n.getHours()).padStart(2,'0')}${String(n.getMinutes()).padStart(2,'0')}`;
+  XLSX.writeFile(wb, `RocketCross_Inbound_${ts}.xlsx`);
+  toast('최종입고(더 로켓입고 스타일) + 파레트별 시트로 저장 완료', true);
+}
+el('exportXLSX').onclick = exportInboundCombinedXLSX;
+
+// 출고용: 원본 시트 스키마 동일 (전체 합산)
+function exportShippingXLSX(){
+  const sheetName = el('sheet')?.value || "";
+  if (!/더\s*로켓입고|수\s*로켓입고/i.test(sheetName)){
+    alert("출고용은 '더 로켓입고' 또는 '수 로켓입고' 시트에서만 가능합니다."); return;
+  }
+  if(!pallets.some(P=>P.items.length)){ alert('출고용: 먼저 바코드 스캔/집계를 완료하세요.'); return; }
+
+  const hdr = headers.slice();
+  const qtyCol = autoMap.qtyCol || "입고 수량 입력(필수)";
+  if (!hdr.includes(qtyCol)) hdr.push(qtyCol);
+  const target = el('targetCol').value;
+
+  const merged = new Map();
+  pallets.forEach(P=>{
+    P.items.forEach(p=>{
+      if(!p.row || !p.out || p.out==='미매핑') return;
+      const key = String(p.row[target]||"").trim();
+      if(!merged.has(key)) merged.set(key, {row:{...p.row}, qty:0});
+      merged.get(key).qty += p.qty;
+    });
+  });
+  if(!merged.size){ alert('출고용으로 내보낼 매칭 행이 없습니다.'); return; }
+
+  const outRows=[];
+  for(const {row, qty} of merged.values()){
+    const o={}; hdr.forEach(h=>{ o[h] = row[h] ?? ""; });
+    o[qtyCol] = qty; outRows.push(o);
+  }
+
+  const ws = XLSX.utils.json_to_sheet(outRows, {header: hdr});
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '출고용');
+  const n=new Date(), ts=`${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}_${String(n.getHours()).padStart(2,'0')}${String(n.getMinutes()).padStart(2,'0')}`;
+  XLSX.writeFile(wb, `출고용_${ts}.xlsx`);
+  toast('출고용 XLSX(행 전체) 저장 완료', true);
+}
+el('exportShipXLSX').onclick=exportShippingXLSX;
+
+setTimeout(()=>{ renderPalletChips(); },0);
+</script>
+</body>
+</html>

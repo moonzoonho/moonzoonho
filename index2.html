@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>입고/출고 스캔 변환 PRO (index2)</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net"/>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#0a0f1f;--panel:#121a2d;--panel2:#0d1428;--line:#1c274a;--text:#eaf0ff;--muted:#9fb1ff;--ok:#3eea9a;--bad:#ff6b6b}
+*{box-sizing:border-box} html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Apple SD Gothic Neo,Noto Sans KR,Arial}
+.wrap{max-width:1200px;margin:26px auto;padding:0 16px}
+h1{margin:0 0 10px;font-size:22px;font-weight:800}
+.sub{color:var(--muted);font-size:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.col{flex:1;min-width:220px}
+label{display:block;margin:0 0 6px;font-size:12px;color:var(--muted)}
+input[type="text"],input[type="number"],select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:10px 12px;font-size:14px;outline:none}
+button{background:#304ab1;border:none;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+button.secondary{background:#243161}button.ghost{background:transparent;border:1px solid #2a3b7d}button.danger{background:var(--bad)}
+.bad{color:var(--bad)}.ok{color:var(--ok)}.muted{color:var(--muted)}.small{font-size:12px}
+table{width:100%;border-collapse:separate;border-spacing:0 8px}
+th,td{padding:10px 12px;background:var(--panel2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{border-left:1px solid var(--line);border-top-left-radius:10px;border-bottom-left-radius:10px}
+th:last-child,td:last-child{border-right:1px solid var(--line);border-top-right-radius:10px;border-bottom-right-radius:10px}
+.right{text-align:right}
+.toast{position:fixed;right:16px;bottom:16px;background:#111a38;color:#cfe0ff;border:1px solid #2a3b7d;padding:10px 14px;border-radius:10px;opacity:0;transform:translateY(10px);transition:.25s}
+.toast.show{opacity:1;transform:translateY(0)}
+.pill{display:inline-flex;align-items:center;gap:6px;background:#162046;border:1px solid #2a3b7d;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe0ff;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.badge{display:inline-block;border:1px solid #2a3b7d;border-radius:999px;padding:2px 8px;font-size:12px;background:#1a2550}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>입고/출고 스캔 변환 PRO</h1>
+  <div class="sub">① 마스터(더/수 로켓입고) 업로드 → ② 인덱스 생성 → ③ 정규 바코드(O열 상품바코드) 스캔 → ④ 내보내기</div>
+
+  <div class="panel">
+    <div class="row">
+      <div class="col">
+        <label>엑셀 업로드</label>
+        <input type="file" id="file" accept=".xlsx,.xls"/>
+      </div>
+      <div style="width:220px">
+        <label>시트 선택</label>
+        <select id="sheet"></select>
+      </div>
+      <div style="width:200px;align-self:end">
+        <button id="loadSheet">시트 불러오기</button>
+      </div>
+      <div class="row" style="margin-left:auto">
+        <span class="small muted">상태:</span>
+        <span id="status" class="small badge">-</span>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <div class="col">
+        <label>검색(키) 열 — 체크된 모든 열에서 매칭 (바코드는 자동 포함)</label>
+        <div id="keyCols" class="chips"></div>
+      </div>
+
+      <div style="width:440px">
+        <label style="display:flex;align-items:center;gap:10px">
+          <span>스캔 변환 대상(타겟) 열</span>
+          <label class="pill" style="margin-left:auto">
+            <input type="checkbox" id="manualTarget"/> 수동 선택
+          </label>
+        </label>
+        <select id="targetCol"></select>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="ghost" id="btnSheetDeo">더 로켓입고 시트로</button>
+          <button type="button" class="ghost" id="btnSheetSu">수 로켓입고 시트로</button>
+        </div>
+      </div>
+
+      <div style="width:200px;align-self:end">
+        <button id="buildIndex" class="ok">인덱스 생성</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:6px">
+      <label class="pill"><input type="checkbox" id="digitsOnly"/> 숫자만 비교</label>
+      <label class="pill"><input type="checkbox" id="caseFold" checked/> 대소문자 무시</label>
+      <label class="pill"><input type="checkbox" id="collapseSpace" checked/> 연속 공백 축약</label>
+      <label class="pill"><input type="checkbox" id="preferExact" checked/> 완전일치 우선</label>
+      <div style="margin-left:auto" class="small muted">자동 매핑: <span id="mapStatus" class="badge">-</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <div class="col">
+        <label>스캔/입력 (정규 바코드) — Enter</label>
+        <input type="text" id="scanInput" placeholder="바코드 입력 후 Enter"/>
+      </div>
+      <div style="width:200px;align-self:end">
+        <button id="resetPallet" class="secondary">현재 파레트 초기화</button>
+      </div>
+      <div style="width:520px;align-self:end">
+        <button id="exportCSV" class="ghost">CSV 내보내기</button>
+        <button id="exportXLSX" class="ghost">입고용 XLSX 내보내기</button>
+        <button id="exportShipXLSX" class="ghost">출고용 XLSX 내보내기</button>
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <table id="tbl">
+        <thead><tr><th style="width:56px">#</th><th>변환값(바코드)</th><th class="right" style="width:120px">수량</th><th>상품코드/명</th><th style="width:200px">작업</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let workbook, data=[], headers=[], rows=[];
+let indexMap=new Map();
+let pallet=[]; // { out, qty, skuName, row }
+let autoMap={};
+
+const el=id=>document.getElementById(id);
+function toast(t, ok=false){const b=el('toast');b.textContent=t;b.style.borderColor=ok?'#2f855a':'#2a3b7d';b.classList.add('show');setTimeout(()=>b.classList.remove('show'),1600);}
+function setStatus(t){ el('status').textContent=t; }
+
+/* ★ 정규화: 모든 공백(스페이스/탭/개행/비표준공백) 제거 */
+function normalize(v){
+  let s = v==null ? '' : String(v);
+  s = s.replace(/[\s\u00A0]+/g,'');     // 모든 공백·개행 제거 (NBSP 포함)
+  if (el('digitsOnly')?.checked) s = s.replace(/\D+/g,'');
+  if (el('caseFold')?.checked) s = s.toLowerCase();
+  return s.trim();
+}
+
+/* 헤더 자동 탐지 */
+function pickHeader(cands){ for(const c of cands){ if(headers.includes(c)) return c; } return null; }
+function guessBarcodeHeader(){ return pickHeader(["상품바코드(필수)","상품바코드","바코드","쿠팡바코드"]); }
+function buildAutoMap(){
+  autoMap = {
+    regName:  pickHeader(["등록상품명","상품명","상품名稱"]),
+    optName:  pickHeader(["옵션명","옵션","규격"]),
+    exposeId: pickHeader(["노출상품 ID","노출ID"]),
+    productId:pickHeader(["등록상품 ID","상품ID","상품코드","내부SKU"]),
+    optionId: pickHeader(["옵션 ID","옵션코드"]),
+    barcode:  guessBarcodeHeader(),
+    price:    pickHeader(["판매가","단가","가격"]),
+    size:     pickHeader(["상품 사이즈","사이즈","규격"]),
+    care:     pickHeader(["취급주의여부","취급주의"]),
+    stock:    pickHeader(["판매가능재고","재고"]),
+    category: pickHeader(["카테고리","분류"]),
+    parallel: pickHeader(["병행수입 여부","병행수입"]),
+    taxType:  pickHeader(["과세유형","세금구분"]),
+    qtyCol:   pickHeader(["입고 수량 입력(필수)","입고 수량 입력","입고수량"])
+  };
+  el('mapStatus').textContent = autoMap.barcode ? "양호" : "확인 필요";
+}
+
+/* 자동/수동 타겟 적용 */
+function applyAutoTargetIfNeeded(){
+  const manual = el('manualTarget')?.checked;
+  const bc = guessBarcodeHeader();
+  if (!manual && bc) el('targetCol').value = bc; // 자동 모드면 바코드로 고정
+  el('targetCol').disabled = !manual;            // 자동이면 잠금, 수동이면 선택 가능
+}
+
+/* 파일/시트 로딩 */
+el('file').addEventListener('change', async ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const buf=await f.arrayBuffer(); workbook=XLSX.read(buf,{type:'array'});
+  const sel=el('sheet'); sel.innerHTML='';
+  workbook.SheetNames.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;sel.appendChild(o);});
+  setStatus(`시트 ${workbook.SheetNames.length}개`);
+});
+el('loadSheet').onclick=()=>{
+  if(!workbook){ alert('파일 먼저 선택'); return; }
+  const ws=workbook.Sheets[el('sheet').value];
+  const json=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+  data=json; rows=data; headers=Object.keys(json[0]||{});
+
+  // 키 체크박스
+  const box=el('keyCols'); box.innerHTML='';
+  headers.forEach(h=>{ const lab=document.createElement('label'); lab.className='pill'; lab.innerHTML=`<input type="checkbox" id="key_${h}" checked/> ${h}`; box.appendChild(lab); });
+
+  // 타겟 후보 채우기
+  const sel=el('targetCol'); sel.innerHTML='';
+  headers.forEach(h=>{ const o=document.createElement('option'); o.value=h; o.textContent=h; sel.appendChild(o); });
+
+  buildAutoMap();
+  applyAutoTargetIfNeeded();
+  setStatus(`헤더 ${headers.length}개, 데이터 ${rows.length}행`);
+};
+
+/* 수동선택 토글 */
+el('manualTarget').addEventListener('change', applyAutoTargetIfNeeded);
+
+/* 빠른 시트 전환 */
+function quickSelectSheet(keyword){
+  const sel = el('sheet');
+  const opt = [...sel.options].find(o => (o.value||"").includes(keyword));
+  if (!opt){ toast(`시트에 '${keyword}'가 없습니다`); return; }
+  sel.value = opt.value; el('loadSheet').click();
+}
+el('btnSheetDeo').onclick = ()=> quickSelectSheet("더 로켓입고");
+el('btnSheetSu').onclick  = ()=> quickSelectSheet("수 로켓입고");
+
+/* 인덱스 생성 (바코드 우선 포함) */
+el('buildIndex').onclick=()=>{
+  indexMap=new Map();
+  let keyCols=headers.filter(h=> el('key_'+h)?.checked);
+  const must = guessBarcodeHeader();
+  if (must && !keyCols.includes(must)) keyCols = [must, ...keyCols];
+  if(!keyCols.length){ alert('키 열을 1개 이상 선택'); return; }
+
+  for(let r=0;r<rows.length;r++){
+    const row=rows[r];
+    for(const c of keyCols){
+      const k=normalize(row[c]); if(!k) continue;
+      if(!indexMap.has(k)) indexMap.set(k,[]);
+      const arr=indexMap.get(k); if(arr[arr.length-1]!==r) arr.push(r);
+    }
+  }
+  toast(`인덱스 생성 완료: 키 ${indexMap.size}개`, true);
+};
+
+/* 스캔/집계 — 매칭된 행 전체 보관 */
+el('scanInput').addEventListener('keydown', e=>{
+  if(e.key!=='Enter') return;
+  const raw=el('scanInput').value; el('scanInput').value=''; if(!raw) return;
+  const key=normalize(raw); const arr=indexMap.get(key);
+  if(!arr||!arr.length){ appendOrInc('미매핑','',null); toast('미매핑: 인덱스에 없음'); return; }
+  const ridx=arr[0]; const row=rows[ridx];
+  const target=el('targetCol').value;
+  const out=String(row[target] ?? '').trim();
+  const skuName=[ row[autoMap.productId]||row['등록상품 ID']||'',
+                  row[autoMap.regName]||row['등록상품명']||row['상품명']||'',
+                  row[autoMap.optName]||row['옵션명']||'' ].filter(Boolean).join(' / ');
+  appendOrInc(out || '미매핑', skuName, row);
+});
+function appendOrInc(outValue, skuName, rowObj){
+  const f=pallet.find(p=>p.out===outValue);
+  if(f){ f.qty++; render(); return; }
+  pallet.push({out:outValue, qty:1, skuName, row:rowObj}); render();
+}
+el('resetPallet').onclick=()=>{ pallet=[]; render(); toast('리셋 완료', true); };
+
+function render(){
+  const tb=document.querySelector('#tbl tbody'); tb.innerHTML='';
+  pallet.forEach((p,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML = `
+      <td class="right">${i+1}</td>
+      <td>${p.out==='미매핑'?'<span class="bad">미매핑</span>':p.out}</td>
+      <td class="right"><input type="number" min="0" value="${p.qty}" data-i="${i}" class="qty" style="width:80px;background:#0e1530;border:1px solid #253064;border-radius:8px;color:#fff;padding:6px 8px"></td>
+      <td>${p.skuName||''}</td>
+      <td><button data-i="${i}" class="dec">-1</button> <button data-i="${i}" class="rm danger">삭제</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('.dec').forEach(b=> b.onclick=e=>{const i=+e.target.dataset.i;pallet[i].qty=Math.max(0,pallet[i].qty-1);render();});
+  tb.querySelectorAll('.rm').forEach(b=> b.onclick=e=>{const i=+e.target.dataset.i;pallet.splice(i,1);render();});
+  tb.querySelectorAll('.qty').forEach(inp=> inp.onchange=e=>{const i=+e.target.dataset.i;pallet[i].qty=Math.max(0,parseInt(e.target.value||'0',10));});
+}
+
+/* 간단 내보내기 */
+function exportCSV(){ if(!pallet.length){ alert('먼저 스캔/집계를 완료하세요'); return; }
+  const ws=XLSX.utils.aoa_to_sheet([['변환값','수량','상품코드/명'], ...pallet.map(p=>[p.out,p.qty,p.skuName])]);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '팔렛트'); XLSX.writeFile(wb, 'scan_result.csv'); toast('CSV 저장', true); }
+function exportXLSX(){ if(!pallet.length){ alert('먼저 스캔/집계를 완료하세요'); return; }
+  const ws=XLSX.utils.aoa_to_sheet([['변환값','수량','상품코드/명'], ...pallet.map(p=>[p.out,p.qty,p.skuName])]);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '입고용'); XLSX.writeFile(wb, '입고용.xlsx'); toast('입고용 XLSX 저장', true); }
+el('exportCSV').onclick=exportCSV; el('exportXLSX').onclick=exportXLSX;
+
+/* 출고용: 현재 시트 헤더 그대로 + 수량만 채워서 내보내기 */
+function exportShippingXLSX(){
+  const sheetName = el('sheet')?.value || "";
+  if (!/더\s*로켓입고|수\s*로켓입고/i.test(sheetName)){
+    alert("출고용은 '더 로켓입고' 또는 '수 로켓입고' 시트에서만 가능합니다."); return;
+  }
+  if(!pallet.length){ alert('출고용: 먼저 바코드 스캔/집계를 완료하세요.'); return; }
+
+  const hdr = headers.slice();
+  const qtyCol = autoMap.qtyCol || "입고 수량 입력(필수)";
+  if (!hdr.includes(qtyCol)) hdr.push(qtyCol);
+
+  const target = el('targetCol').value;
+  const merged = new Map();
+  pallet.forEach(p=>{
+    if(!p.row || !p.out || p.out==='미매핑') return;
+    const key = String(p.row[target]||"").trim();
+    if(!merged.has(key)) merged.set(key, {row:{...p.row}, qty:0});
+    merged.get(key).qty += p.qty;
+  });
+  if(!merged.size){ alert('출고용으로 내보낼 매칭 행이 없습니다.'); return; }
+
+  const outRows=[];
+  for(const {row, qty} of merged.values()){
+    const o={}; hdr.forEach(h=>{ o[h] = row[h] ?? ""; });
+    o[qtyCol] = qty;
+    outRows.push(o);
+  }
+
+  const ws = XLSX.utils.json_to_sheet(outRows, {header: hdr});
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '출고용');
+  const n=new Date(), ts=`${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}_${String(n.getHours()).padStart(2,'0')}${String(n.getMinutes()).padStart(2,'0')}`;
+  XLSX.writeFile(wb, `출고용_${ts}.xlsx`);
+  toast('출고용 XLSX(행 전체) 저장 완료', true);
+}
+el('exportShipXLSX').onclick=exportShippingXLSX;
+</script>
+</body>
+</html>
